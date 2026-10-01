@@ -205,29 +205,25 @@ echo "Starting Rust.."
 
 # Preparing arguments
 function add_argument_pair {
-        local -n arr=$1
-        if  [ ! -z "${!3}" ]; then
-                  arr+=("${2}");
-                  arr+=("${!3}");
-        fi
+  local -n arr=$1
+  if [ ! -z "${!3}" ]; then
+    arr+=("${2}");
+    arr+=("${!3}");
+  fi
 }
 
 ARGUMENTS=()
-
 add_argument_pair ARGUMENTS "+server.port" "RUST_SERVER_PORT"
 add_argument_pair ARGUMENTS "+server.queryport" "RUST_SERVER_QUERYPORT"
 add_argument_pair ARGUMENTS "+server.identity" "RUST_SERVER_IDENTITY"
-
-
 if [ -z "$RUST_SERVER_LEVELURL" ]; then
-       add_argument_pair ARGUMENTS "+server.worldsize" "RUST_SERVER_WORLDSIZE"
-       add_argument_pair ARGUMENTS "+server.seed" "RUST_SERVER_SEED"
-       echo "Generating procedural map.."
+  add_argument_pair ARGUMENTS "+server.worldsize" "RUST_SERVER_WORLDSIZE"
+  add_argument_pair ARGUMENTS "+server.seed" "RUST_SERVER_SEED"
+  echo "Generating procedural map.."
 else
-       add_argument_pair ARGUMENTS "+server.levelurl" "RUST_SERVER_LEVELURL"
-       echo "Using custom map.."
+  add_argument_pair ARGUMENTS "+server.levelurl" "RUST_SERVER_LEVELURL"
+  echo "Using custom map.."
 fi
-
 add_argument_pair ARGUMENTS "+server.hostname" "RUST_SERVER_NAME"
 add_argument_pair ARGUMENTS "+server.url" "RUST_SERVER_URL"
 add_argument_pair ARGUMENTS "+server.headerimage" "RUST_SERVER_BANNER_URL"
@@ -236,18 +232,61 @@ add_argument_pair ARGUMENTS "+server.maxplayers" "RUST_SERVER_MAXPLAYERS"
 add_argument_pair ARGUMENTS "+server.saveinterval" "RUST_SERVER_SAVE_INTERVAL"
 add_argument_pair ARGUMENTS "+app.port" "RUST_APP_PORT"
 
-if [ "$LOGROTATE_ENABLED" = "1" ]; then
-	unbuffer /steamcmd/rust/RustDedicated $RUST_STARTUP_COMMAND "${ARGUMENTS[@]}" 2>&1 | grep --line-buffered -Ev '^\s*$|Filename' | tee $RUST_SERVER_LOG_FILE &
-elif [ "$STDLOG_ENABLED" = "1" ]; then
-	/steamcmd/rust/RustDedicated $RUST_STARTUP_COMMAND "${ARGUMENTS[@]}" 2>&1 &
-else
-	/steamcmd/rust/RustDedicated $RUST_STARTUP_COMMAND "${ARGUMENTS[@]}" &
+# Alert helper -- posts to Discord if RUST_ALERT_WEBHOOK is set, else just logs
+send_alert() {
+  local message="$1"
+  echo "ALERT: $message"
+  if [ ! -z "${RUST_ALERT_WEBHOOK}" ]; then
+    curl -s -X POST -H "Content-Type: application/json" \
+      -d "{\"content\": \"$message\"}" "$RUST_ALERT_WEBHOOK" > /dev/null 2>&1
+  fi
+}
+
+# Launches RustDedicated and waits for it to exit
+start_rust_server() {
+  if [ "$LOGROTATE_ENABLED" = "1" ]; then
+    unbuffer /steamcmd/rust/RustDedicated $RUST_STARTUP_COMMAND "${ARGUMENTS[@]}" 2>&1 | grep --line-buffered -Ev '^\s*$|Filename' | tee "$RUST_SERVER_LOG_FILE" &
+  elif [ "$STDLOG_ENABLED" = "1" ]; then
+    /steamcmd/rust/RustDedicated $RUST_STARTUP_COMMAND "${ARGUMENTS[@]}" 2>&1 | tee /tmp/rust-last-boot.log &
+  else
+    /steamcmd/rust/RustDedicated $RUST_STARTUP_COMMAND "${ARGUMENTS[@]}" > /tmp/rust-last-boot.log 2>&1 &
+  fi
+  child=$!
+  wait "$child"
+}
+
+# Checks the most recent boot log for the known Oxide/Rust-update incompatibility crash
+crashed_with_oxide_incompatibility() {
+  local logfile="${RUST_SERVER_LOG_FILE:-/tmp/rust-last-boot.log}"
+  [ -f "$logfile" ] && grep -qE "MissingMethodException|Could not load signature" "$logfile"
+}
+
+start_rust_server
+
+MAX_SELF_HEAL_ATTEMPTS=1
+attempt=0
+while crashed_with_oxide_incompatibility && [ "$attempt" -lt "$MAX_SELF_HEAL_ATTEMPTS" ]; do
+  attempt=$((attempt + 1))
+  send_alert "Rust server hit an Oxide/game-update incompatibility crash. Attempting automatic clean reinstall (attempt $attempt/$MAX_SELF_HEAL_ATTEMPTS).."
+
+  # Full clean reinstall, preserving only oxide/ (plugins/config/data) and server/ (world saves/identity)
+  find /steamcmd/rust -mindepth 1 -maxdepth 1 ! -name 'oxide' ! -name 'server' -exec rm -rf {} +
+
+  install_or_update
+
+  if [ "$RUST_OXIDE_ENABLED" = "1" ]; then
+    echo "Re-downloading and installing latest Oxide.."
+    curl -sL "https://umod.org/games/rust/download/develop" | bsdtar -xvf- -C /steamcmd/rust/
+    chmod 755 /steamcmd/rust/CSharpCompiler.x86_x64 > /dev/null 2>&1
+  fi
+
+  start_rust_server
+done
+
+if crashed_with_oxide_incompatibility; then
+  send_alert "Rust server still crashing after automatic clean reinstall — this needs manual attention. Likely waiting on an upstream Oxide fix."
 fi
 
-child=$!
-wait "$child"
-
 pkill -f nginx
-
 echo "Exiting.."
 exit
