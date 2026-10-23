@@ -52,6 +52,8 @@ steam_run_install() {
 	out="$(mktemp)"
 	bash "$STEAMCMD" +runscript "$script" 2>&1 | tee "$out"
 	rc=${PIPESTATUS[0]}
+	# Remember whether we got as far as logging in, to tell "no network" from "Steam refused"
+	if grep -q "Connecting anonymously to Steam Public...OK" "$out"; then UPDATER_CONNECTED=1; else UPDATER_CONNECTED=0; fi
 	if [ "$rc" -eq 0 ] && grep -q "Success! App '$APP_ID'" "$out" && ! grep -q "Error! App '$APP_ID'" "$out"; then
 		rm -f "$out"
 		return 0
@@ -133,14 +135,25 @@ fresh_install_swap() {
 }
 
 # Install or update Rust, escalating only as far as needed:
-#   1. normal steamcmd update
+#   1. normal steamcmd update (retried a few times if Steam is unreachable)
 #   2. drop steamcmd's stale app state (appmanifest + cached app info), retry
 #   3. fresh install in a staging dir, swapped in only on success
 # Returns non-zero only if all of them failed; the caller decides whether the
 # existing install is good enough to start.
 install_or_update() {
+	local try
 	echo "Installing or updating Rust.. (this might take a while, be patient)"
-	steam_run_install && return 0
+	for try in 1 2 3; do
+		steam_run_install && return 0
+		[ "$UPDATER_CONNECTED" = "1" ] && break
+		updater_log "Could not reach Steam (try $try of 3)"
+		[ "$try" -lt 3 ] && sleep "${RUST_UPDATE_RETRY_DELAY:-20}"
+	done
+	if [ "$UPDATER_CONNECTED" != "1" ]; then
+		# A network problem says nothing about the install, so don't touch it
+		updater_log "Steam was never reachable, leaving the existing install as it is"
+		return 1
+	fi
 
 	updater_log "Update failed, dropping stale app state and retrying (step 2 of 3)"
 	reset_steam_app_state
