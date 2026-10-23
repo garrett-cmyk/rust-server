@@ -29,19 +29,8 @@ trap 'exit_handler' SIGINT SIGTERM
 # Rust includes a 64-bit version of steamclient.so, so we need to tell the OS where it exists
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/steamcmd/rust/RustDedicated_Data/Plugins/x86_64
 
-# Define the install/update function
-install_or_update()
-{
-	# Install Rust from install.txt
-	echo "Installing or updating Rust.. (this might take a while, be patient)"
-	bash /steamcmd/steamcmd.sh +runscript /app/install.txt
-
-	# Terminate if exit code wasn't zero
-	if [ $? -ne 0 ]; then
-		echo "Exiting, steamcmd install or update failed!"
-		exit 1
-	fi
-}
+# Load the install/update helpers (install_or_update, install_oxide, send_alert, ..)
+source /app/update_lib.sh
 
 # Remove old lock files (used by restart_app/ and update_check.sh)
 rm -fr /tmp/*.lock
@@ -78,12 +67,33 @@ fi
 if [ "$RUST_START_MODE" = "2" ]; then
 	# Check that Rust exists in the first place
 	if [ ! -f "/steamcmd/rust/RustDedicated" ]; then
-		install_or_update
+		if ! install_or_update; then
+			echo "Exiting, steamcmd install failed!"
+			exit 1
+		fi
 	else
 		echo "Rust seems to be installed, skipping automatic update.."
 	fi
 else
-	install_or_update
+	if ! install_or_update; then
+		if [ -f "/steamcmd/rust/RustDedicated" ]; then
+			send_alert "Rust update FAILED after every recovery step. Starting on the existing install (build $(installed_buildid)). Check the container logs."
+		else
+			echo "Exiting, steamcmd install failed and nothing is installed!"
+			exit 1
+		fi
+	elif [ "${RUST_UPDATE_VERIFY:-1}" = "1" ]; then
+		# Compare what is on disk with what Steam publishes, so a silently stale server is visible
+		INSTALLED_BUILD="$(installed_buildid)"
+		LATEST_BUILD="$(latest_buildid)"
+		if [ -z "$LATEST_BUILD" ]; then
+			updater_log "Could not look up the latest build on Steam; installed build is ${INSTALLED_BUILD:-unknown}"
+		elif [ "$INSTALLED_BUILD" = "$LATEST_BUILD" ]; then
+			updater_log "Rust is up to date (build $INSTALLED_BUILD)"
+		else
+			send_alert "Rust update did not apply: installed build ${INSTALLED_BUILD:-unknown}, Steam has $LATEST_BUILD."
+		fi
+	fi
 
 	# Run the update check if it's not been run before
 	if [ ! -f "/steamcmd/rust/build.id" ]; then
@@ -99,7 +109,9 @@ fi
 
 # Check if Oxide is enabled
 if [ "$RUST_OXIDE_ENABLED" = "1" ]; then
-	# Next check if Oxide doesn't' exist, or if we want to always update it
+	# Next check if Oxide doesn't' exist, or if we want to always update it.
+	# Keep RUST_OXIDE_UPDATE_ON_BOOT=1 whenever the game update step runs: steamcmd's
+	# validate restores the vanilla game DLLs, which silently removes Oxide's patches.
 	INSTALL_OXIDE="0"
 	if [ ! -f "/steamcmd/rust/CSharpCompiler.x86_x64" ]; then
 		INSTALL_OXIDE="1"
@@ -111,9 +123,14 @@ if [ "$RUST_OXIDE_ENABLED" = "1" ]; then
 	# If necessary, download and install latest Oxide
 	if [ "$INSTALL_OXIDE" = "1" ]; then
 		echo "Downloading and installing latest Oxide.."
-		OXIDE_URL="https://umod.org/games/rust/download/develop"
-		curl -sL $OXIDE_URL | bsdtar -xvf- -C /steamcmd/rust/
-		chmod 755 /steamcmd/rust/CSharpCompiler.x86_x64 > /dev/null 2>&1 &
+		if ! install_oxide; then
+			if [ -f "/steamcmd/rust/CSharpCompiler.x86_x64" ]; then
+				send_alert "Could not download Oxide; starting with the Oxide files already on disk, which may not match this Rust build."
+			else
+				echo "Exiting, Oxide is enabled but could not be installed!"
+				exit 1
+			fi
+		fi
 	fi
 fi
 
@@ -232,16 +249,6 @@ add_argument_pair ARGUMENTS "+server.maxplayers" "RUST_SERVER_MAXPLAYERS"
 add_argument_pair ARGUMENTS "+server.saveinterval" "RUST_SERVER_SAVE_INTERVAL"
 add_argument_pair ARGUMENTS "+app.port" "RUST_APP_PORT"
 
-# Alert helper -- posts to Discord if RUST_ALERT_WEBHOOK is set, else just logs
-send_alert() {
-  local message="$1"
-  echo "ALERT: $message"
-  if [ ! -z "${RUST_ALERT_WEBHOOK}" ]; then
-    curl -s -X POST -H "Content-Type: application/json" \
-      -d "{\"content\": \"$message\"}" "$RUST_ALERT_WEBHOOK" > /dev/null 2>&1
-  fi
-}
-
 # Launches RustDedicated and waits for it to exit
 start_rust_server() {
   if [ "$LOGROTATE_ENABLED" = "1" ]; then
@@ -272,12 +279,14 @@ while crashed_with_oxide_incompatibility && [ "$attempt" -lt "$MAX_SELF_HEAL_ATT
   # Full clean reinstall, preserving only oxide/ (plugins/config/data) and server/ (world saves/identity)
   find /steamcmd/rust -mindepth 1 -maxdepth 1 ! -name 'oxide' ! -name 'server' -exec rm -rf {} +
 
-  install_or_update
+  if ! install_or_update; then
+    send_alert "Clean reinstall failed, nothing is installed. Manual attention needed."
+    exit 1
+  fi
 
   if [ "$RUST_OXIDE_ENABLED" = "1" ]; then
     echo "Re-downloading and installing latest Oxide.."
-    curl -sL "https://umod.org/games/rust/download/develop" | bsdtar -xvf- -C /steamcmd/rust/
-    chmod 755 /steamcmd/rust/CSharpCompiler.x86_x64 > /dev/null 2>&1
+    install_oxide || send_alert "Could not download Oxide during the clean reinstall."
   fi
 
   start_rust_server

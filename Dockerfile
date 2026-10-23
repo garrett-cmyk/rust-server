@@ -61,8 +61,9 @@ RUN ln -s /app/rcon_app/app.js /usr/bin/rcon
 # Add the steamcmd installation script
 ADD install.txt /app/install.txt
 
-# Copy the Rust startup script
+# Copy the Rust startup script and its update helpers
 ADD start_rust.sh /app/start.sh
+ADD update_lib.sh /app/update_lib.sh
 
 # Copy the Rust update check script
 ADD update_check.sh /app/update_check.sh
@@ -110,6 +111,10 @@ ENV RUST_UPDATE_BRANCH "public"
 ENV RUST_START_MODE "0"
 ENV RUST_OXIDE_ENABLED "0"
 ENV RUST_OXIDE_UPDATE_ON_BOOT "1"
+ENV RUST_OXIDE_URL ""
+ENV RUST_UPDATE_VERIFY "1"
+ENV RUST_UPDATE_FRESH_FALLBACK "1"
+ENV RUST_ALERT_WEBHOOK ""
 ENV RUST_RCON_SECURE_WEBSOCKET "0"
 ENV RUST_SERVER_WORLDSIZE "3500"
 ENV RUST_SERVER_MAXPLAYERS "500"

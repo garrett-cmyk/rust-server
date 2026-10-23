@@ -45,7 +45,11 @@ RUST_UPDATE_CHECKING (DEFAULT: "0" - Set to 1 to enable fully automatic update c
 RUST_UPDATE_BRANCH (DEFAULT: "public" - Set to match the branch that you want to use for updating, ie. "prerelease" or "public", but do not specify arguments like "-beta")
 RUST_START_MODE (DEFAULT: "0" - Determines if the server should update and then start (0), only update (1) or only start (2))
 RUST_OXIDE_ENABLED (DEFAULT: "0" - Set to 1 to automatically install the latest version of Oxide)
-RUST_OXIDE_UPDATE_ON_BOOT (DEFAULT: "1" - Set to 0 to disable automatic update of Oxide on boot)
+RUST_OXIDE_UPDATE_ON_BOOT (DEFAULT: "1" - Reinstalls Oxide on every boot. Leave at 1 while the game update step runs: steamcmd validate restores the vanilla game DLLs, which removes Oxide's patches)
+RUST_OXIDE_URL (DEFAULT: "" - Oxide download URL, empty means the latest GitHub release of OxideMod/Oxide.Rust with uMod as fallback)
+RUST_UPDATE_VERIFY (DEFAULT: "1" - After updating on boot, compare the installed build with Steam's latest and alert if they differ)
+RUST_UPDATE_FRESH_FALLBACK (DEFAULT: "1" - If a normal update and a retry both fail, download a fresh copy into a staging folder and swap it in only if it fully succeeds. oxide/, server/ and logs/ are never touched)
+RUST_ALERT_WEBHOOK (DEFAULT: "" - Discord webhook URL used for update and self-heal alerts)
 RUST_RCON_SECURE_WEBSOCKET (DEFAULT: "0" - Set to 1 to enable secure websocket connections to the RCON web interface)
 RUST_HEARTBEAT (DEFAULT: "0" - Set to 1 to enable the heartbeat service which will forcibly quit the server if it becomes unresponsive to queries)
 ```
