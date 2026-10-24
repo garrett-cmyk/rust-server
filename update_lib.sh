@@ -52,8 +52,14 @@ steam_run_install() {
 	out="$(mktemp)"
 	bash "$STEAMCMD" +runscript "$script" 2>&1 | tee "$out"
 	rc=${PIPESTATUS[0]}
-	# Remember whether we got as far as logging in, to tell "no network" from "Steam refused"
-	if grep -q "Connecting anonymously to Steam Public...OK" "$out"; then UPDATER_CONNECTED=1; else UPDATER_CONNECTED=0; fi
+	# Remember whether Steam was reached, to tell "no network" from "Steam refused". Any
+	# sign that the login or the update job ran counts: the "Connecting ...OK" line alone
+	# proved unreliable, while "Error! App ..." can only appear after a connected update.
+	if grep -qE "Connecting anonymously to Steam Public\.\.\.OK|Update state \(|(Error|Success)! App '$APP_ID'" "$out"; then
+		UPDATER_CONNECTED=1
+	else
+		UPDATER_CONNECTED=0
+	fi
 	if [ "$rc" -eq 0 ] && grep -q "Success! App '$APP_ID'" "$out" && ! grep -q "Error! App '$APP_ID'" "$out"; then
 		rm -f "$out"
 		return 0
@@ -71,6 +77,8 @@ reset_steam_app_state() {
 		rm -f "$manifest"
 	fi
 	rm -f "$STEAM_HOME/appcache/appinfo.vdf" "$STEAM_HOME/appcache/packageinfo.vdf"
+	# Half-finished download state from earlier failed runs
+	rm -rf "$RUST_DIR/steamapps/downloading" "$RUST_DIR/steamapps/temp"
 }
 
 # Everything in $RUST_DIR that is data rather than game files.
