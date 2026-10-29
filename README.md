@@ -7,7 +7,7 @@
 ```
 Cracked or pirated versions of Rust are not supported in any way, shape or form. Please do not post issues regarding these.
 ```
-
+Fixes and changes have been vibe-coded using Claude. Do not trust this project for a production environment without extensive testing beforehand.
 ---
 
 **TUTORIAL**: We've written a guide on how to use this image [here](http://rust.didscraft.com/rust-server-on-linux-using-docker/).
