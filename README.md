@@ -48,6 +48,7 @@ RUST_OXIDE_ENABLED (DEFAULT: "0" - Set to 1 to automatically install the latest 
 RUST_OXIDE_UPDATE_ON_BOOT (DEFAULT: "1" - Reinstalls Oxide on every boot. Leave at 1 while the game update step runs: steamcmd validate restores the vanilla game DLLs, which removes Oxide's patches)
 RUST_OXIDE_URL (DEFAULT: "" - Oxide download URL, empty means the latest GitHub release of OxideMod/Oxide.Rust with uMod as fallback)
 RUST_UPDATE_VERIFY (DEFAULT: "1" - After updating on boot, compare the installed build with Steam's latest and alert if they differ)
+RUST_LOGFILE_STDOUT (DEFAULT: "0" - Set to "1" to also pass "-logfile /dev/stdout" to RustDedicated. This was the old behaviour and printed every log line twice)
 RUST_UPDATE_FRESH_FALLBACK (DEFAULT: "1" - If a normal update and a retry both fail, download a fresh copy into a staging folder and swap it in only if it fully succeeds. oxide/, server/ and logs/ are never touched)
 RUST_ALERT_WEBHOOK (DEFAULT: "" - Discord webhook URL used for update and self-heal alerts)
 RUST_RCON_SECURE_WEBSOCKET (DEFAULT: "0" - Set to 1 to enable secure websocket connections to the RCON web interface)

@@ -175,8 +175,13 @@ fi
 if [ "$LOGROTATE_ENABLED" = "1" ]; then
 	echo "Log rotation enabled!"
 
-	# Log to stdout by default
-	RUST_STARTUP_COMMAND="$RUST_STARTUP_COMMAND -logfile /dev/stdout"
+	# RustDedicated already prints its console to stdout, which the pipeline below
+	# captures and tees into the rotating log file. Also passing "-logfile /dev/stdout"
+	# made Unity write every line to stdout a second time, so every line showed up
+	# twice. Set RUST_LOGFILE_STDOUT=1 to get the old behaviour back.
+	if [ "${RUST_LOGFILE_STDOUT:-0}" = "1" ]; then
+		RUST_STARTUP_COMMAND="$RUST_STARTUP_COMMAND -logfile /dev/stdout"
+	fi
 	echo "Using startup arguments: $RUST_SERVER_STARTUP_ARGUMENTS"
 
 	# Create the logging directory structure
